@@ -247,39 +247,75 @@ OAuth2.0 定义了四种获取 token 的方式（Grant Type），适用于不同
 Access Token 过期后，用 Refresh Token 换一个新的，不用让用户重新登录。
 有效期更长（比如 7 天），但只能用来换新的 Access Token，不能用来访问资源。
 
-#### 完整流程是这样的
+#### 为什么需要它？——一句话讲透
+
+没有 Refresh Token 的世界：
+
+```
+每次 Access Token 过期
+  → 必须重新走一遍授权码流程
+  → 跳到授权服务器 → 用户输入密码 → 点同意 → 拿 code → 换 token
+  → 用户：？？？我刚登录过啊，怎么又让我登？
+```
+
+有了 Refresh Token：
+
+```
+Access Token 过期
+  → 后端拿着 refresh_token 直接 POST /oauth2/token 就能拿到新的 access_token
+  → 纯机器对机器的服务间调用，用户完全无感知
+  → 用户：啥都没发生，继续用
+```
+
+**Refresh Token 的本质就是：把"用户参与"的那一步（登录 + 授权）的成果持久化下来。**
+用户登录一次，换来一个 refresh_token，只要它没过期，就再也不用麻烦用户了。
+
+#### 完整生命周期
 
 ```
                           时间线
                             │
-  用户登录 ────────────────>│
+  用户第一次登录 ───────────>│
                             │
   授权服务器返回：            │
    ├─ access_token (30秒)   │  ← 很短，因为万一泄露影响有限
-   └─ refresh_token (7天)   │  ← 很长，用来续期
+   └─ refresh_token (7天)   │  ← 很长，这就是"用户登录一次的成果"
                             │
         ... 过了 30 秒 ...   │
                             │
   access_token 过期了        │
-  用 refresh_token 换新的：  │
+  但用户完全不知道！因为：    │
                             │
+  后端自动做这件事：          │  ← 纯服务间调用，不需要用户参与
   POST /oauth2/token        │
    grant_type=refresh_token │
    refresh_token=xxx        │
                             │
   授权服务器返回：            │
-   ├─ 新的 access_token     │  ← 用户完全无感知，不用重新登录
+   ├─ 新的 access_token     │  ← 又能用 30 秒了
    └─ 新的 refresh_token    │  ← 旧的作废（轮转机制）
                             │
         ... 又过 30 秒 ...   │
                             │
-  再用 refresh_token 刷新 ...│  ← 如此循环
+  后端又自动刷新 ...          │  ← 如此循环，用户永远无感
                             │
         ... 过了 7 天 ...    │
                             │
-  refresh_token 也过期了     │
-  → 用户必须重新登录          │
+  refresh_token 也过期了     │  ← "登录成果"过期了
+  → 这时才需要用户重新登录    │  → 又回到第一步
 ```
+
+#### 对比：有没有 Refresh Token 的区别
+
+| 场景 | 没有 Refresh Token | 有 Refresh Token |
+|------|-------------------|-----------------|
+| access_token 过期了 | 用户被踢下线，重新走授权码流程 | 后端静默刷新，用户无感知 |
+| 用户体验 | 频繁要求重新登录 | 7天内免登录 |
+| 是否需要用户参与 | 每次都要 | 只要 refresh_token 有效就不要 |
+| 安全性 | access_token 设长一点（少登录但泄露风险大） | access_token 可以设很短（30秒都行） |
+
+**正是因为有了 Refresh Token，Access Token 才敢设这么短（30秒）。**
+即使 Access Token 被盗，30 秒后就失效了。而没有 Refresh Token 的话，你只能把 Access Token 设很长（比如 7 天），一旦泄露后果严重。
 
 #### 两个 Token 的区别
 
@@ -288,8 +324,32 @@ Access Token 过期后，用 Refresh Token 换一个新的，不用让用户重�
 | 用途 | 访问资源（放在请求头里） | 换新的 Access Token |
 | 有效期 | 很短（30秒 ~ 1小时） | 很长（7天 ~ 30天） |
 | 能访问资源吗 | 能 | 不能 |
+| 谁在用 | 每次请求资源服务器都带上 | 只在刷新时发给授权服务器 |
 | 泄露了怎么办 | 等它过期（很快） | 服务器端撤销，强制重新登录 |
-| 谁持有 | 前端/客户端 | 后端保存（不要给前端 JS） |
+| 谁持有 | 前端/客户端 | 后端保存（不要暴露给前端 JS） |
+
+#### 轮转机制（Refresh Token Rotation）
+
+本项目开启了轮转机制（`reuseRefreshTokens = false`），意思是：
+- 每次用 refresh_token 刷新时，授权服务器会返回一个全新的 refresh_token
+- 旧的 refresh_token 立刻作废
+- 如果有人偷了你的旧 refresh_token 想用，会发现已经失效，服务器也能检测到异常
+
+```
+刷新前：refresh_token = AAAA
+  ↓ 调用刷新接口
+刷新后：refresh_token = BBBB（新的）  AAAA 立即作废
+  ↓ 下次刷新
+刷新后：refresh_token = CCCC（新的）  BBBB 立即作废
+```
+
+#### 在本项目中体验
+
+1. 打开前端 http://localhost:5173 ，走一遍授权码模式
+2. 回调页面会显示 access_token、refresh_token 和 30 秒倒计时
+3. 等 30 秒后 token 过期，点击"刷新 Token"按钮
+4. 观察：用 refresh_token 换到了全新的 access_token，页面倒计时重新开始
+5. 可以反复刷新，不需要重新登录
 
 #### 用 curl 测试刷新
 
@@ -307,7 +367,7 @@ curl -X POST http://localhost:9000/oauth2/token \
 ```json
 {
   "access_token": "新的JWT...",
-  "refresh_token": "新的refresh_token...",
+  "refresh_token": "新的refresh_token（旧的已作废）",
   "token_type": "Bearer",
   "expires_in": 30
 }
