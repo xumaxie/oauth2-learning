@@ -1,0 +1,17 @@
+server:
+  port: 8090
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # 【关键配置】指向授权服务器的 JWKS 端点
+          # 资源服务器启动时会从这里获取 RSA 公钥，用于验证 JWT 签名
+          # 这就是为什么资源服务器不需要直接跟授权服务器通信验证每个 token
+          jwk-set-uri: http://localhost:9000/oauth2/jwks
+          issuer-uri: http://localhost:9000
+
+logging:
+  level:
+    org.springframework.security: DEBUG
