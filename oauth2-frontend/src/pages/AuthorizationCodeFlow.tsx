@@ -1,6 +1,5 @@
 import { useState } from 'react'
 
-// 授权服务器地址（浏览器跳转用完整地址）
 const AUTH_SERVER = 'http://localhost:9000'
 
 /**
@@ -19,8 +18,8 @@ export default function AuthorizationCodeFlow() {
       redirect_uri: 'http://127.0.0.1:5173/callback',
       state: 'random-state-' + Date.now(),
     })
-    // 浏览器直接跳转到授权服务器（这不是 fetch，不受 CORS 限制）
-    window.location.href = `${AUTH_SERVER}/oauth2/authorize?${params}`
+    // 在新标签页打开授权服务器（当前页面不丢失）
+    window.open(`${AUTH_SERVER}/oauth2/authorize?${params}`, '_blank')
   }
 
   const steps = [
@@ -30,7 +29,7 @@ export default function AuthorizationCodeFlow() {
     },
     {
       title: '第 2 步：跳转到授权服务器',
-      desc: `浏览器跳转到授权服务器的授权端点：\nGET ${AUTH_SERVER}/oauth2/authorize?response_type=code&client_id=web-app&scope=openid+read+write&redirect_uri=...`,
+      desc: `浏览器打开新标签页，跳转到授权服务器的授权端点：\nGET ${AUTH_SERVER}/oauth2/authorize?response_type=code&client_id=web-app&scope=openid+read+write&redirect_uri=...`,
     },
     {
       title: '第 3 步：用户登录并授权',
@@ -38,15 +37,15 @@ export default function AuthorizationCodeFlow() {
     },
     {
       title: '第 4 步：授权服务器返回授权码',
-      desc: '授权服务器把授权码（code）通过 URL 参数返回给前端：\nhttp://127.0.0.1:5173/callback?code=xxx&state=xxx',
+      desc: '授权服务器把授权码（code）通过 URL 参数返回到回调页面：\nhttp://127.0.0.1:5173/callback?code=xxx&state=xxx\n回调页面会自动用 code 换取 token。',
     },
     {
       title: '第 5 步：用授权码换取 Token',
-      desc: '前端用 code 向授权服务器发送 POST 请求换取 access_token。\n注意：这一步是后端对后端的通信（在本项目中为了演示简化由前端完成）。',
+      desc: '回调页面自动向授权服务器发送 POST 请求换取 access_token 和 refresh_token。\n注意：这一步是后端对后端的通信（在本项目中为了演示简化由前端完成）。',
     },
     {
       title: '第 6 步：使用 Token 访问资源',
-      desc: '拿到 access_token 后，就可以用它来访问资源服务器的 API 了。\n在请求头加上：Authorization: Bearer <access_token>',
+      desc: '拿到 access_token 后，就可以用它来访问资源服务器的 API 了。\n在请求头加上：Authorization: Bearer <token>',
     },
   ]
 
@@ -84,7 +83,8 @@ export default function AuthorizationCodeFlow() {
       {/* 开始按钮 */}
       <div className="bg-white rounded-xl p-6 shadow-sm text-center">
         <p className="text-gray-600 mb-4">
-          点击下方按钮，体验完整的授权码模式流程。浏览器会跳转到授权服务器的登录页面。
+          点击下方按钮，体验完整的授权码模式流程。
+          会在新标签页打开授权服务器的登录页面，本页面不会被关闭。
         </p>
         <button
           onClick={startAuth}

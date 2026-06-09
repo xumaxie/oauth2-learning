@@ -108,8 +108,9 @@ public class AuthorizationServerConfig {
                         .requireProofKey(false)                  // 不需要 PKCE（学习阶段简化）
                         .build())
                 .tokenSettings(TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofHours(1))   // access_token 有效期 1 小时
-                        .refreshTokenTimeToLive(Duration.ofDays(7))   // refresh_token 有效期 7 天
+                        .accessTokenTimeToLive(Duration.ofSeconds(30))    // access_token 30秒过期（方便演示刷新）
+                        .refreshTokenTimeToLive(Duration.ofDays(7))       // refresh_token 有效期 7 天
+                        .reuseRefreshTokens(false)                        // 每次刷新都发新的 refresh_token（轮转）
                         .build())
                 .build();
 
@@ -217,7 +218,8 @@ public class AuthorizationServerConfig {
                 );
 
         // 未登录时跳转到登录页
-        http.exceptionHandling(exceptions -> exceptions
+        http.cors(Customizer.withDefaults())  // 启用 CORS（token 端点需要跨域访问）
+            .exceptionHandling(exceptions -> exceptions
                 .defaultAuthenticationEntryPointFor(
                         new LoginUrlAuthenticationEntryPoint("/login"),
                         new MediaTypeRequestMatcher(MediaType.TEXT_HTML)

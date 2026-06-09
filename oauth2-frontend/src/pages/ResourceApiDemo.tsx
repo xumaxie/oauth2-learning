@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 
 /**
  * 资源接口测试页面
@@ -7,10 +8,36 @@ import { useState } from 'react'
  * 帮助理解 token 如何保护 API 资源。
  */
 export default function ResourceApiDemo() {
+  const [searchParams] = useSearchParams()
   const [token, setToken] = useState('')
   const [response, setResponse] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [tokenExpired, setTokenExpired] = useState(false)
+
+  // 从 URL 参数自动填入 token
+  useEffect(() => {
+    const urlToken = searchParams.get('token')
+    if (urlToken) {
+      setToken(urlToken)
+    }
+  }, [searchParams])
+
+  // 简单检查 token 是否过期（解码 JWT 的 exp 字段）
+  useEffect(() => {
+    if (!token) { setTokenExpired(false); return }
+    try {
+      const parts = token.split('.')
+      if (parts.length !== 3) return
+      const payload = JSON.parse(atob(parts[1]))
+      if (payload.exp) {
+        const isExpired = Date.now() / 1000 > payload.exp
+        setTokenExpired(isExpired)
+      }
+    } catch {
+      // 解码失败忽略
+    }
+  }, [token])
 
   const endpoints = [
     { label: '🌐 公开接口（不需要 Token）', url: '/api/public/hello', needToken: false },
@@ -35,7 +62,7 @@ export default function ResourceApiDemo() {
 
       if (!res.ok) {
         setError(`HTTP ${res.status}: ${JSON.stringify(data)}`)
-        setResponse({ status: res.status, headers: Object.fromEntries(res.headers.entries()), body: data })
+        setResponse({ status: res.status, body: data })
         return
       }
 
@@ -67,6 +94,17 @@ export default function ResourceApiDemo() {
           placeholder="把从授权码模式或客户端模式获取的 access_token 粘贴到这里..."
           className="w-full h-24 p-3 border-2 border-gray-200 rounded-lg text-sm font-mono focus:border-indigo-400 focus:outline-none resize-none"
         />
+        {tokenExpired && (
+          <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3 text-red-700 text-sm">
+            ⚠️ 这个 Token 已过期（exp 已超过当前时间），调用接口会返回 401。
+            请回到授权码回调页用 Refresh Token 刷新，或者重新走一遍授权流程。
+          </div>
+        )}
+        {!tokenExpired && token && (
+          <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-3 text-green-700 text-sm">
+            ✅ Token 有效，可以正常调用接口。注意：Access Token 只有 30 秒有效期，过期后需要刷新。
+          </div>
+        )}
         <p className="text-xs text-gray-500 mt-1">
           💡 先去"授权码模式"或"客户端模式"页面获取 token，然后粘贴到这里
         </p>
@@ -169,7 +207,7 @@ export default function ResourceApiDemo() {
             <ol className="mt-1 list-decimal list-inside space-y-1">
               <li>从请求头取出 Bearer token</li>
               <li>用授权服务器的公钥验证 JWT 签名</li>
-              <li>检查 token 是否过期</li>
+              <li>检查 token 是否过期（exp 字段）</li>
               <li>检查 scope 是否匹配接口要求的权限</li>
               <li>验证通过，放行请求</li>
             </ol>
